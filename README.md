@@ -249,6 +249,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Author
 
-Created by [Sakib Hossain](https://sakib.io) ([@sakibweb](https://github.com/sakibweb))
+Created by [Sakibur Rahman](https://sakib.io) ([@sakibweb](https://github.com/sakibweb))
 
 [GitHub Repository](https://github.com/sakibweb/css2php)
