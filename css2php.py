@@ -84,7 +84,7 @@ class CSS2PHPConverter:
             print(f"Warning: Failed to fetch {source}: {e}")
         return None
 
-    def _parse_css(self, css_content: str) -> tuple[dict, ProcessingStats]:
+    def _parse_css(self, css_content: str, split_selectors: bool = False) -> tuple[dict, ProcessingStats]: # split_selectors parameter added
         """Parse CSS content and return class map with statistics"""
         start_time = time.time()
 
@@ -96,8 +96,8 @@ class CSS2PHPConverter:
             output_size=0,
             parsing_time=0,
             class_count=0,
-            media_queries=0,
-            pseudo_classes=0,
+            media_queries= 0,
+            pseudo_classes= 0,
             file_path="",
             syntax_valid=False # Initialized as False, will be updated after validation
         )
@@ -107,27 +107,54 @@ class CSS2PHPConverter:
                 # Handle normal style rules
                 selectors = [s.strip() for s in rule.selectorText.split(',')]
                 for selector in selectors:
-                    if selector.startswith('.'):
-                        class_name = selector.strip('.')
-                        if ':' in class_name:
-                            base_class, pseudo = class_name.split(':', 1)
-                            class_name = f"{base_class}:{pseudo}"
-                            stats.pseudo_classes += 1
+                    if split_selectors: # Split selectors logic
+                        individual_selectors = [s.strip() for s in selector.split(' ')] # Split by space
+                        for individual_selector in individual_selectors:
+                             if individual_selector.startswith('.'):
+                                class_name = individual_selector.strip('.')
+                                if ':' in class_name:
+                                    base_class, pseudo = class_name.split(':', 1)
+                                    class_name = f"{base_class}:{pseudo}"
+                                    stats.pseudo_classes += 1
 
-                        properties = {
-                            prop.name: prop.value
-                            for prop in rule.style
-                            if prop.name and prop.value
-                        }
+                                properties = {
+                                    prop.name: prop.value
+                                    for prop in rule.style
+                                    if prop.name and prop.value
+                                }
 
-                        if media_query:
-                            if class_name not in class_map:
-                                class_map[class_name] = {'default': {}, 'media': {}} # Ensure class entry exists
-                            class_map[class_name]['media'][media_query] = properties
-                            stats.media_queries += 1
-                        else:
-                            class_map[class_name]['default'].update(properties)
-                        stats.class_count += 1
+                                if media_query:
+                                    if class_name not in class_map:
+                                        class_map[class_name] = {'default': {}, 'media': {}} # Ensure class entry exists
+                                    class_map[class_name]['media'][media_query] = properties
+                                    stats.media_queries += 1
+                                else:
+                                    class_map[class_name]['default'].update(properties)
+                                stats.class_count += 1
+
+                    else: # Original logic - keep combined selectors
+                        if selector.startswith('.'):
+                            class_name = selector.strip('.')
+                            if ':' in class_name:
+                                base_class, pseudo = class_name.split(':', 1)
+                                class_name = f"{base_class}:{pseudo}"
+                                stats.pseudo_classes += 1
+
+                            properties = {
+                                prop.name: prop.value
+                                for prop in rule.style
+                                if prop.name and prop.value
+                            }
+
+                            if media_query:
+                                if class_name not in class_map:
+                                    class_map[class_name] = {'default': {}, 'media': {}} # Ensure class entry exists
+                                class_map[class_name]['media'][media_query] = properties
+                                stats.media_queries += 1
+                            else:
+                                class_map[class_name]['default'].update(properties)
+                            stats.class_count += 1
+
 
             elif isinstance(rule, cssutils.css.CSSMediaRule):
                 media_query_text = rule.media.mediaText
@@ -141,7 +168,7 @@ class CSS2PHPConverter:
         stats.parsing_time = time.time()
         return dict(class_map), stats
 
-    def _generate_php(self, class_map: dict, source: str, stats: ProcessingStats) -> str:
+    def _generate_php(self, class_map: dict, source: str, stats: ProcessingStats, split_selectors: bool = False) -> str:
         """Generate PHP array code from class map with comprehensive header"""
         # Calculate additional stats
         compression_ratio = (stats.output_size / stats.input_size * 100) if stats.input_size > 0 else 0
@@ -177,13 +204,16 @@ class CSS2PHPConverter:
  * Skip errors: {'Yes' if self.skip_errors else 'No'}
  * Timeout: {self.timeout}s
  * Overwrite enabled: {'Yes' if self.overwrite else 'No'}
+ * Split Selectors: {'Yes' if split_selectors else 'No'}
  *
  * File Structure:
  * ------------------------------------------
- * - Array keys are CSS class names
- * - Each class has 'default' and optional 'media' properties
- * - Media queries are nested under 'media' key
- * - All properties are sorted alphabetically
+ * - Array keys are CSS class selectors.
+ * - {'Combined selectors are kept as single keys' if not split_selectors else 'Combined selectors are split into individual keys.'}
+ * - Each key represents a CSS selector and its associated styles.
+ * - Each class selector has 'default' and optional 'media' properties.
+ * - Media queries are nested under 'media' key.
+ * - All properties are sorted alphabetically.
  * ==========================================
  */
 
@@ -198,7 +228,7 @@ return [
                 clean_class = re.sub(r'\\([\.:/\-])', r'\1', clean_class)
                 # Only escape single quotes for PHP
                 escaped_class = clean_class.replace("'", "\\'")
-                
+
                 php_code += f"    '{escaped_class}' => [\n"
 
                 if rules['default']:
@@ -348,7 +378,7 @@ return [
         ]
         return "\n".join(report)
 
-    def convert(self, source: str, output_path: str = None, name_prefix: str = '') -> Optional[ProcessingStats]:
+    def convert(self, source: str, output_path: str = None, name_prefix: str = '', split_selectors: bool = False) -> Optional[ProcessingStats]: # split_selectors parameter added
         """Convert CSS source to PHP array"""
         try:
             start_time = time.time()
@@ -372,8 +402,8 @@ return [
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Process CSS and generate PHP
-            class_map, stats = self._parse_css(css_content)
-            php_code = self._generate_php(class_map, source, stats)
+            class_map, stats = self._parse_css(css_content, split_selectors=split_selectors) # Pass split_selectors to _parse_css
+            php_code = self._generate_php(class_map, source, stats, split_selectors=split_selectors)
 
             # Validate and try to fix PHP syntax
             is_valid, error_msg, fixed_code = self._validate_php_syntax(php_code)
@@ -468,7 +498,7 @@ def merge_php_files(merge_dir: str, output_dir: str, name_prefix: str, priority_
     print(f"📊 Summary:")
     print(f"   • Files processed: {len(processed_files)}")
     print(f"   • Unique classes: {len(merged_arrays)}")
-    print(f"   • Duplicates skipped: {len(duplicates)}") # Still report duplicates (though now merged)
+    print(f"   • Duplicates found: {len(duplicates)}") # Still report duplicates (though now merged)
     print(f"   • Output file: {output_file}")
     print(f"   • PHP Syntax: {'✅ Valid' if is_valid else '❌ Invalid'}")
 
@@ -499,6 +529,16 @@ def generate_merged_php_code(merged_arrays, version, author, repo, merge_dir, pr
  * Duplicate Information (Properties Merged):
  * ------------------------------------------
 {format_duplicate_info(duplicates)}
+ * ==========================================
+ *
+ * File Structure:
+ * ------------------------------------------
+ * - Array keys are CSS class selectors.
+ * - Combined selectors are kept as single keys.
+ * - Each key represents a CSS selector and its associated styles.
+ * - Each class selector has 'default' and optional 'media' properties.
+ * - Media queries are nested under 'media' key.
+ * - All properties are sorted alphabetically.
  * ==========================================
  */
 
@@ -608,32 +648,32 @@ def indent_array_content(content: str) -> str:
     lines = content.split('\n')
     indent_level = 0
     formatted_lines = []
-    
+
     for line in lines:
         line = line.strip()
         if not line:
             continue
-            
+
         # Adjust indentation based on brackets
         indent_level += line.count('[') - line.count(']')
         spaces = '    ' * indent_level
         formatted_lines.append(spaces + line)
-        
+
         if ']' in line:
             indent_level = max(0, indent_level - line.count(']'))
-    
+
     return '\n'.join(formatted_lines)
 
 def format_duplicate_info(duplicates: Dict[str, List[str]]) -> str:
     """Format duplicate information for header comment"""
     if not duplicates:
         return " * No duplicates found"
-    
+
     lines = []
     for key, files in sorted(duplicates.items()):
         files_str = ', '.join(files)
         lines.append(f" * '{key}' found in: {files_str}")
-    
+
     return '\n'.join(lines)
 
 def main():
@@ -655,7 +695,7 @@ GitHub: https://github.com/sakibweb/css2php
 """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    
+
     # Keep existing arguments
     parser.add_argument('sources', nargs='*', help="CSS file paths or URLs")
     parser.add_argument('-o', '--output', help="Output directory path")
@@ -671,6 +711,7 @@ GitHub: https://github.com/sakibweb/css2php
     parser.add_argument('-mn', '--merge-name', default='main', help="Name prefix for merged file (default: main)")
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {__version__}\nCreated by {__author__}\n{__repo__}')
     parser.add_argument('-i', '--info', action='store_true', help="Show detailed info")
+    parser.add_argument('--split-selectors', action='store_true', help="Split combined CSS selectors into individual keys in PHP array (may lose specificity)") # Added split-selectors argument
     args = parser.parse_args()
 
     # Handle merge operation if requested
@@ -687,7 +728,7 @@ GitHub: https://github.com/sakibweb/css2php
     if not args.sources:
         parser.print_help()
         return
-        
+
     converter = CSS2PHPConverter(
         timeout=args.timeout,
         skip_errors=args.skip_errors,
@@ -703,7 +744,7 @@ GitHub: https://github.com/sakibweb/css2php
     for source in args.sources:
         print(f"\nProcessing: {source}")
         try:
-            stats = converter.convert(source, args.output, args.name_prefix)
+            stats = converter.convert(source, args.output, args.name_prefix, split_selectors=args.split_selectors) # Pass split_selectors
             if stats:
                 results.append(stats)
                 if stats.syntax_valid:
@@ -724,7 +765,8 @@ GitHub: https://github.com/sakibweb/css2php
                         'Processing time': f"{stats.parsing_time:.3f}s",
                         'Pseudo-classes': stats.pseudo_classes,
                         'Syntax validation': '✅ Valid' if stats.syntax_valid else '❌ Invalid',
-                        'Syntax error details': stats.syntax_error_message # Show error details in info
+                        'Syntax error details': stats.syntax_error_message, # Show error details in info
+                        'Split Selectors': 'Yes' if args.split_selectors else 'No' # Show Split Selectors info in stats
                     }
                     for key, value in sorted(info.items()):
                         print(f"   • {key}: {value}")
@@ -754,7 +796,8 @@ GitHub: https://github.com/sakibweb/css2php
             'Total media queries': sum(s.media_queries for s in results),
             'Total output size': f"{total_output:,} bytes",
             'Total processing time': f"{total_time:.2f}s",
-            'Total syntax errors': sum(1 for s in results if not s.syntax_valid) # Count total syntax errors
+            'Total syntax errors': sum(1 for s in results if not s.syntax_valid), # Count total syntax errors
+            'Split Selectors': 'Yes' if args.split_selectors else 'No' # Show Split Selectors info in summary
         }
 
         for key, value in sorted(summary.items()):
