@@ -62,13 +62,7 @@ pip install -r requirements.txt
     *   `pip` (Python package installer)
     *   `php` (for syntax validation - ensure it's in your system's PATH)
 
-2.  **Install CSS2PHP via pip:**
-
-    ```bash
-    pip install css2php-cli
-    ```
-
-    Alternatively, you can clone the repository and run it directly:
+2.  **Clone the repository and run it directly:**
 
     ```bash
     git clone https://github.com/sakibweb/css2php.git
